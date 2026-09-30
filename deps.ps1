@@ -1,6 +1,11 @@
-# backup-phone/deps.ps1
+# deps.ps1
 # Installs Python packages needed for HEIC -> WebP conversion.
 # Idempotent: checks each package before installing.
+
+$ErrorActionPreference = "Stop"
+if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
+    throw "Python is missing. Install Python 3.10 or newer with pip and add python to PATH."
+}
 
 Write-Host "  [backup-phone] Checking dependencies..." -ForegroundColor Cyan
 
@@ -10,14 +15,23 @@ $packages = @(
 )
 
 foreach ($pkg in $packages) {
-    $ok = python -c "import $($pkg.Import); print('ok')" 2>$null
-    if ($ok -eq "ok") {
+    # A missing import is an expected probe result. Avoid writing a traceback to
+    # stderr, which Windows PowerShell can turn into a terminating native error.
+    $importCheck = @"
+try:
+    import $($pkg.Import)
+except ImportError:
+    raise SystemExit(1)
+print('ok')
+"@
+    $ok = & python -c $importCheck 2>$null
+    if ($LASTEXITCODE -eq 0 -and $ok -eq "ok") {
         Write-Host "    OK  $($pkg.Pip) is already installed" -ForegroundColor Green
     } else {
         Write-Host "    Installing $($pkg.Pip) via pip..." -ForegroundColor Yellow
-        pip install $pkg.Pip
+        & python -m pip install $pkg.Pip
         if ($LASTEXITCODE -ne 0) {
-            Write-Host "    ERROR: Failed to install $($pkg.Pip). Make sure Python and pip are on your PATH." -ForegroundColor Red
+            throw "Failed to install $($pkg.Pip). Make sure python -m pip works for your Python installation."
         } else {
             Write-Host "    OK  $($pkg.Pip) installed" -ForegroundColor Green
         }
